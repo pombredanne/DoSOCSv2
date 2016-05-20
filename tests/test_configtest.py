@@ -21,35 +21,49 @@ from dosocs2 import dosocs2, configtools
 from pytest import raises
 from tempfile import NamedTemporaryFile
 
-TEMP_CONFIG = '''
+
+def test_configtest_expected_output_typical_case(capsys):
+    with NamedTemporaryFile(mode='w+') as tf:
+        tf.write('''
 connection_uri = sqlite:///:memory:
 namespace_prefix = sqlite:///:memory:
 scanner_nomos_path = /dev/null
-'''
-
-def test_dbinit_typical_case_returns_zero(capsys):
-    with NamedTemporaryFile(mode='w+') as tf:
-        tf.write(TEMP_CONFIG)
+''')
         tf.flush()
+        expected = '''
+-------------------------------------------------------------------------------
+
+Config location:
+{}
+
+-------------------------------------------------------------------------------
+
+Effective configuration:
+
+# begin dosocs2 config
+
+connection_uri = sqlite:///:memory:
+default_scanners = nomos
+echo = False
+namespace_prefix = sqlite:///:memory:
+scanner_nomos_path = /dev/null
+
+# end dosocs2 config
+
+-------------------------------------------------------------------------------
+
+Testing specified scanner paths...
+nomos (/dev/null)...ok.
+
+-------------------------------------------------------------------------------
+
+Testing database connection...ok.
+'''.format(tf.name)
         args = [
-            'dbinit', 
-            '--no-confirm',
+            'configtest', 
             '-f',
             tf.name
             ]
-        ret = dosocs2.main(args)
-        assert ret == 0
-
-def test_dbinit_warning_includes_connection_uri(capsys):
-    with NamedTemporaryFile(mode='w+') as tf:
-        tf.write(TEMP_CONFIG)
-        tf.flush()
-        args = [
-            'dbinit', 
-            '--no-confirm',
-            '-f',
-            tf.name
-            ]
-        ret = dosocs2.main(args)
-        out, err = capsys.readouterr()
-        assert 'sqlite:///:memory:' in err
+        dosocs2.main(args)
+    out, err = capsys.readouterr()
+    assert out == expected

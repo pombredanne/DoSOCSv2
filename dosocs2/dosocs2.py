@@ -1,7 +1,6 @@
 #!/usr/bin/env python2
 
 # Copyright (C) 2015 University of Nebraska at Omaha
-# Copyright (C) 2015 dosocs2 contributors
 #
 # This file is part of dosocs2.
 #
@@ -24,11 +23,12 @@
 {0} configtest [-f FILE]
 {0} dbinit [-f FILE] [--no-confirm]
 {0} generate [-C COMMENT] [-f FILE] [-N NAME] (PACKAGE-ID)
-{0} newconfig
-{0} oneshot [-c COMMENT] [-C COMMENT] [-f FILE] [-n NAME] [-N NAME]
-    [-s SCANNERS] [-e VER] [-r] (PATH)
-{0} print [-f FILE] (DOC-ID)
+{0} newconfig [-f FILE]
+{0} oneshot [-c COMMENT] [-C COMMENT] [-e VER] [-f FILE] [-n NAME] [-N NAME]
+    [-r] [-s SCANNERS] [-T FILE] (PATH)
+{0} print [-f FILE] [-T FILE] (DOC-ID)
 {0} scan [-c COMMENT] [-f FILE] [-n NAME] [-e VER] [-s SCANNERS] [-r] (PATH)
+{0} scanproject [--project-file] (PROJECT-FILE)
 {0} scanners [-f FILE]
 {0} (--help | --version)
 
@@ -60,14 +60,16 @@ Options:
                                 from package name)
   -n, --package-name=NAME     Name for new package (otherwise create
                                 name from filename)
+  --project-file              Project Scan option
   -r, --rescan                If any selected scanner already ran on a
                                 package/file, run it anyway
   -s, --scanners=SCANNERS     Comma-separated list of scanners to use
                                 ('dosocs2 scanners' to see choices)
-      --no-confirm            Don't prompt before initializing database with
-                                'dbinit' (dangerous!)
+  -T, --template-file=FILE    Template to use for document generation
+  --no-confirm                Don't prompt when dropping/creating tables
+                                (dangerous!)
 
-Report bugs to <tgurney@unomaha.edu>.
+Report bugs to <skorlimarla@unomaha.edu>.
 '''
 
 from __future__ import print_function
@@ -79,13 +81,13 @@ import sys
 
 import docopt
 
-__version__ = '0.15.1'
+__version__ = '0.16.1'
 
 
-from . import config
+from . import configtools
 from . import dbinit
+from . import discover
 from . import render
-from . import scanners
 from . import schema as db
 from . import spdxdb
 from . import util
@@ -94,6 +96,10 @@ from . import util
 format_map = {
     'tag': pkg_resources.resource_filename('dosocs2', 'templates/2.0.tag'),
 }
+
+
+def print_hr():
+    print('\n' + 79 * '-' + '\n')
 
 
 def msg(text, **kwargs):
@@ -106,7 +112,7 @@ def errmsg(text, **kwargs):
     sys.stdout.flush()
 
 
-def do_scan(engine, package_root, package_file_path=None, selected_scanners=None,
+def do_scan(engine, config, package_root, package_file_path=None, selected_scanners=None,
             package_name=None, package_version='', package_comment='', rescan=False):
     if selected_scanners is None:
         selected_scanners = ()
@@ -128,7 +134,7 @@ def do_scan(engine, package_root, package_file_path=None, selected_scanners=None
             'rescan': rescan
             }
         with engine.begin() as conn:
-            scanner = scanner_cls(conn)
+            scanner = scanner_cls(conn, config)
             package_already_done = scanner.package_is_already_done(package['package_id'])
             if not rescan and package_already_done:
                 errmsg('{} already ran on package {}'.format(scanner.name, package['package_id']))
@@ -140,20 +146,19 @@ def do_scan(engine, package_root, package_file_path=None, selected_scanners=None
     return package
 
 
-def do_configtest(engine, alt_config):
-    print('\n' + 79 * '-' + '\n')
-    print('Config resolution order:')
-    for path in config.get_config_resolution_order(alt_config):
-        if os.path.exists(path):
-            print(path)
-        else:
-            print(path + ' (not present)')
-    print('\n' + 79 * '-' + '\n')
+def do_configtest(engine, config):
+    print_hr()
+    print('Config location:')
+    if os.path.exists(config.file_location):
+        print(config.file_location)
+    else:
+        print(config.file_location + ' (not present)')
+    print_hr()
     print('Effective configuration:\n')
     print('# begin dosocs2 config\n')
     config.dump_to_file(sys.stdout)
     print('\n# end dosocs2 config')
-    print('\n' + 79 * '-' + '\n')
+    print_hr()
     print('Testing specified scanner paths...')
     scanner_config_pattern = r'scanner_(.*?)_path'
     for key in sorted(config.config.keys()):
@@ -167,7 +172,7 @@ def do_configtest(engine, alt_config):
             else:
                 print('ok.')
 
-    print('\n' + 79 * '-' + '\n')
+    print_hr()
     print('Testing database connection...', end='')
     sys.stdout.flush()
     with engine.begin() as conn:
@@ -181,53 +186,69 @@ def main(sysargv=None):
         argv=sysargv,
         version=__version__
         )
-    alt_config = argv['--config']
+    alt_config_path = argv['--config']
     doc_id = argv['DOC-ID']
     package_id = argv['PACKAGE-ID']
     package_path = argv['PATH']
     new_doc_comment = argv['--doc-comment'] or ''
     new_doc_name = argv['--doc-name'] or argv['--package-name']
+    template_file = argv['--template-file'] or format_map['tag']
+    project_file = argv['PROJECT-FILE'] or ''
 
+    # Configuration and scanner discovery
+    config = configtools.Config()
     config.make_config_dirs()
+    scanners = discover.discover()
 
+    # Pull from alternate config file if specified
     if argv['--config']:
         try:
-            with open(alt_config) as _:
-                pass
+            # if creating new, don't care if it already exists or not
+            if not argv['newconfig']:
+                with open(alt_config_path) as _:
+                    pass
         except EnvironmentError as ex:
-            errmsg('{}: {}'.format(alt_config, ex.strerror))
+            errmsg('{}: {}'.format(alt_config_path, ex.strerror))
             return 1
-        config.update_config(alt_config)
+        config.file_location = alt_config_path
+    config.update_config()
+
+    # Verify existence of selected scanners
     if not argv['--scanners']:
         argv['--scanners'] = config.config['default_scanners']
     selected_scanners = []
     for this_scanner_name in argv['--scanners'].split(','):
         try:
-            this_scanner = scanners.scanners[this_scanner_name]
+            this_scanner = scanners[this_scanner_name]
         except KeyError:
             errmsg("'{}' is not a known scanner".format(this_scanner_name))
             return 1
         if this_scanner not in selected_scanners:
             selected_scanners.append(this_scanner)
+
+    # Set up connection
     echo = util.bool_from_str(config.config['echo'])
     engine = db.create_connection(config.config['connection_uri'], echo)
 
+    # Now run the indicated command
+
     if argv['configtest']:
-        do_configtest(engine, alt_config)
+        do_configtest(engine, config)
         return 0
 
     elif argv['newconfig']:
-        config_path = config.DOSOCS2_CONFIG_PATH
-        configresult = config.create_user_config()
-        if not configresult:
-            errmsg('failed to write config file to {}'.format(config_path))
+        try:
+            configresult = config.create_local_config()
+        except EnvironmentError as e:
+            errmsg('failed to write config file to {}: {}'.format(config.file_location, e.strerror))
+            return 1
         else:
-            msg('wrote config file to {}'.format(config_path))
-        return 0 if configresult else 1
+            msg('wrote config file to {}'.format(config.file_location))
+            return 0
 
     elif argv['scanners']:
         default_scanners = config.config['default_scanners'].split(',')
-        for s in sorted(scanners.scanners):
+        for s in sorted(scanners):
             if s in default_scanners:
                 print(s + ' [default]')
             else:
@@ -235,40 +256,43 @@ def main(sysargv=None):
         return 0
 
     elif argv['dbinit']:
+        errmsg('preparing to initialize the database ({})'.format(str(engine)[7:-1]))
+        errmsg('all existing data will be deleted!')
+        errmsg('type the word "YES" (all uppercase) to commit.')
         if not argv['--no-confirm']:
-            errmsg('preparing to initialize the database ({})'.format(str(engine)[7:-1]))
-            errmsg('all existing data will be deleted!')
-            errmsg('make sure you are connected to the internet before continuing.')
-            errmsg('type the word "YES" (all uppercase) to commit.')
             answer = raw_input()
             if answer != 'YES':
                 errmsg('canceling operation.')
                 return 1
-        return 0 if dbinit.initialize(engine, __version__) else 1
+        else:
+            print('YES')
+        return 0 if dbinit.initialize(engine, db, __version__) else 1
 
     elif argv['print']:
         with engine.begin() as conn:
             if spdxdb.fetch(conn, db.documents, doc_id) is None:
                 errmsg('document id {} not found in the database.'.format(doc_id))
                 return 1
-            print(render.render_document(conn, doc_id, format_map['tag']))
+            print(render.render_document(conn, doc_id, template_file))
 
     elif argv['generate']:
         kwargs = {
             'name': new_doc_name,
-            'comment': new_doc_comment
+            'comment': new_doc_comment,
+            'prefix': config.config['namespace_prefix']
             }
         with engine.begin() as conn:
             package = spdxdb.fetch(conn, db.packages, package_id)
             if package is None:
                 errmsg('package id {} not found in the database.'.format(package_id))
                 return 1
-            document_id = spdxdb.create_document(conn, package, **kwargs)['document_id']
+            document_id = spdxdb.create_document(conn, package=package, **kwargs)['document_id']
         fmt = '(package_id {}): document_id: {}\n'
         sys.stderr.write(fmt.format(package_id, document_id))
 
     elif argv['scan']:
         kwargs = {
+            'config': config.config,
             'engine': engine,
             'selected_scanners': selected_scanners,
             'package_name': argv['--package-name'],
@@ -286,10 +310,13 @@ def main(sysargv=None):
             kwargs['package_root'] = package_path
             kwargs['package_file_path'] = None
             do_scan(**kwargs)
-
+    elif argv['scanproject']:
+         use_info = '[-] Contact DoSOCSv2 Organization for project level info'
+         print("{0} {1}".format(use_info, os.path.abspath(project_file)))
 
     elif argv['oneshot']:
         kwargs = {
+            'config': config.config,
             'engine': engine,
             'selected_scanners': selected_scanners,
             'package_name': argv['--package-name'],
@@ -314,13 +341,16 @@ def main(sysargv=None):
             else:
                 kwargs = {
                     'name': new_doc_name,
-                    'comment': new_doc_comment
+                    'comment': new_doc_comment,
+                    'prefix': config.config['namespace_prefix']
                     }
-                doc_id = spdxdb.create_document(conn, package, **kwargs)['document_id']
+                doc_id = spdxdb.create_document(conn, package=package, **kwargs)['document_id']
             fmt = '{}: document_id: {}\n'
             sys.stderr.write(fmt.format(package_path, doc_id))
         with engine.begin() as conn:
-            print(render.render_document(conn, doc_id, format_map['tag']))
+            print(render.render_document(conn, doc_id, template_file))
+    
+    return 0
 
 
 if __name__ == "__main__":

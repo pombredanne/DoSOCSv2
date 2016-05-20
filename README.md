@@ -1,5 +1,10 @@
-dosocs2 [![Build Status](https://travis-ci.org/DoSOCSv2/DoSOCSv2.svg?branch=master)](https://travis-ci.org/DoSOCSv2/DoSOCSv2)
+dosocs2 
 =======
+
+branch | status
+--- | ---
+master | [![Build Status](https://travis-ci.org/DoSOCSv2/DoSOCSv2.svg?branch=master)](https://travis-ci.org/DoSOCSv2/DoSOCSv2)
+dev | [![Build Status](https://travis-ci.org/DoSOCSv2/DoSOCSv2.svg?branch=dev)](https://travis-ci.org/DoSOCSv2/DoSOCSv2)
 
 dosocs2 is a command-line tool for managing SPDX 2.0 documents and data. It can
 scan source code distributions to produce SPDX information, store that
@@ -34,8 +39,7 @@ changes until a 1.x.x release!
 License and Copyright
 ---------------------
 
-Copyright © 2015 University of Nebraska at Omaha  
-Copyright © 2015 dosocs2 contributors
+Copyright © 2015 University of Nebraska at Omaha
 
 dosocs2 is free software: you can redistribute it and/or modify it under the
 terms of the GNU General Public License as published by the Free Software
@@ -53,10 +57,6 @@ Dependencies
 - Python 2.7.x
 
 Optional:
-- [FOSSology](http://www.fossology.org/) 2.5.x or later version (for
-  more license/copyright scanners)
-- [OWASP dependency-check](https://github.com/jeremylong/DependencyCheck)
-  (for vulnerability identification)
 - PostgreSQL 8.x or later version (can be on a separate machine)
 
 Python libraries:
@@ -98,10 +98,6 @@ For example, for user `tom`, this database would be created at
 `/home/tom/.config/dosocs2/dosocs2.sqlite3`. If you like, you can open the
 config file and change the `connection_uri` variable to use a different
 location for the database.
-
-If you have [FOSSology](http://www.fossology.org/) installed, you also need
-to set the path of any of the supported scanners you want to use
-(see [doc/scanners.md](doc/scanners.md))
 
 
 ### Step 3 (Optional) - Add PostgreSQL configuration
@@ -166,10 +162,10 @@ In the default configuration, if a scanner is not specified, only `nomos`
 is run by default. It gathers license information, but is a bit slow.
 One can use the `-s` option to explicitly specify which scanners to run:
 
-    $ dosocs2 scan -s nomos_deep,dependency_check package.tar.gz
+    $ dosocs2 scan -s nomos_deep,dummy package.tar.gz
     dosocs2: package_tar_gz: package_id: 456
     dosocs2: running nomos_deep on package 456
-    dosocs2: running dependency_check on package 456
+    dosocs2: running dummy on package 456
 
 After `dosocs2 scan`, no SPDX document has yet been created.
 To create one in the database (specifying the package ID):
@@ -202,4 +198,7 @@ larger feature set, and a more modular implementation, among other changes.
 Maintainers
 -----------
 
-[Thomas T. Gurney](https://github.com/ttgurney)
+[DoSOCSv2 organization](https://github.com/DoSOCSv2)
+
+
+(This work has been funded through the National Science Foundation VOSS-IOS Grant: 1122642.)

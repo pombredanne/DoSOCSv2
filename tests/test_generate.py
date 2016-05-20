@@ -17,39 +17,36 @@
 #
 # SPDX-License-Identifier: GPL-2.0+
 
-from dosocs2 import dosocs2, configtools
-from pytest import raises
-from tempfile import NamedTemporaryFile
+
+from .helpers import TempEnv, run_dosocs2
+
 
 TEMP_CONFIG = '''
-connection_uri = sqlite:///:memory:
-namespace_prefix = sqlite:///:memory:
+connection_uri = sqlite:///{0}
+namespace_prefix = sqlite:///{0}
+scanner_copyright_path = /dev/null
+scanner_dependency_check_path = /dev/null
+scanner_monk_path = /dev/null
 scanner_nomos_path = /dev/null
 '''
 
-def test_dbinit_typical_case_returns_zero(capsys):
-    with NamedTemporaryFile(mode='w+') as tf:
-        tf.write(TEMP_CONFIG)
-        tf.flush()
-        args = [
-            'dbinit', 
-            '--no-confirm',
-            '-f',
-            tf.name
-            ]
-        ret = dosocs2.main(args)
-        assert ret == 0
 
-def test_dbinit_warning_includes_connection_uri(capsys):
-    with NamedTemporaryFile(mode='w+') as tf:
-        tf.write(TEMP_CONFIG)
-        tf.flush()
+def test_generate_typical_case_returns_zero(capsys):
+    with TempEnv(TEMP_CONFIG) as (temp_config, temp_db):
         args = [
-            'dbinit', 
-            '--no-confirm',
+            'scan', 
             '-f',
-            tf.name
+            temp_config.name,
+            '-s',
+            'dummy',
+            '/dev/null'
             ]
-        ret = dosocs2.main(args)
-        out, err = capsys.readouterr()
-        assert 'sqlite:///:memory:' in err
+        ret = run_dosocs2(args)
+        args = [
+            'generate', 
+            '-f',
+            temp_config.name,
+            '1'
+            ]
+        ret = run_dosocs2(args)
+        assert ret == 0

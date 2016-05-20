@@ -1,5 +1,4 @@
 # Copyright (C) 2015 University of Nebraska at Omaha
-# Copyright (C) 2015 dosocs2 contributors
 #
 # This file is part of dosocs2.
 #
@@ -21,10 +20,7 @@
 import time
 
 import jinja2
-from . import config
 from . import queries
-from . import util
-
 
 def _filter_text(value):
     return '<text>' + value + '</text>'

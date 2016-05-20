@@ -17,23 +17,25 @@
 #
 # SPDX-License-Identifier: GPL-2.0+
 
-from dosocs2 import schema as db
-from pytest import raises
+from contextlib import contextmanager
+from dosocs2 import dosocs2, configtools
+from tempfile import NamedTemporaryFile
 
-def test_db_create_connection_with_echo():
-    engine = db.create_connection('sqlite:///:memory:', echo=True)
-    assert engine is not None
-    assert engine._echo
+@contextmanager
+def TempEnv(config_text):
+    with NamedTemporaryFile(mode='w+') as temp_config:
+        with NamedTemporaryFile(mode='w+') as temp_db:
+            temp_config.write(config_text.format(temp_db.name))
+            temp_config.flush()
+            args = [
+                'dbinit', 
+                '-f',
+                temp_config.name,
+                '--no-confirm'
+                ]
+            ret = run_dosocs2(args)
+            yield temp_config, temp_db
 
-def test_db_create_connection_without_echo():
-    engine = db.create_connection('sqlite:///:memory:', echo=False)
-    assert engine is not None
-    assert not engine._echo
 
-def test_db_create_connection_only_one_arg_fails():
-    with raises(Exception):
-        engine = db.create_connection('sqlite:///:memory:')
-
-def test_db_create_connection_bad_conn_string_fails():
-    with raises(Exception):
-        engine = db.create_connection('blah', echo=True)
+def run_dosocs2(args):
+    return dosocs2.main(args)
